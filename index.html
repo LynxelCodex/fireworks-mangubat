@@ -102,6 +102,7 @@
   const rockets = [];
   const fireworks = [];
   const pendingSpreads = []; // queued secondary booms
+  const looseSparks = [];    // free-flying sparks from explosions
 
   /* ── Trajectory types ── */
   const trajectoryTypes = ['snake','spiral','wander'];
@@ -166,6 +167,22 @@
       r: cfg.particleR * (0.7 + Math.random()*0.6)
     }));
 
+    // burst sparks that fly outward on explosion
+    const sparkCount = 40 + Math.floor(Math.random() * 80);
+    for(let i = 0; i < sparkCount; i++){
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 6;
+      looseSparks.push({
+        x: x, y: y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 1.5,
+        life: 0.6 + Math.random() * 0.6,
+        decay: 0.008 + Math.random() * 0.012,
+        color: pickColor(family),
+        r: 0.8 + Math.random() * 1.5
+      });
+    }
+
     fireworks.push({
       particles,
       frame: 0,
@@ -216,6 +233,26 @@
         pendingSpreads.splice(s, 1);
       }
     }
+
+    // draw loose sparks
+    for(let si = looseSparks.length - 1; si >= 0; si--){
+      const sp = looseSparks[si];
+      sp.x += sp.vx;
+      sp.y += sp.vy;
+      sp.vy += 0.06;       // gravity
+      sp.vx *= 0.99;       // drag
+      sp.life -= sp.decay;
+      if(sp.life <= 0){ looseSparks.splice(si, 1); continue; }
+      ctx.globalAlpha = Math.min(1, sp.life);
+      ctx.shadowBlur = 4;
+      ctx.shadowColor = sp.color;
+      ctx.fillStyle = sp.color;
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, sp.r * sp.life, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
 
     // rockets ascending
     for(let r = rockets.length - 1; r >= 0; r--){
@@ -354,6 +391,19 @@
           ctx.arc(p.tx, p.ty, p.r, 0, Math.PI*2);
           ctx.fill();
           ctx.globalAlpha = 1;
+
+          // shed glitter sparks from heart particles
+          if(Math.random() < 0.03){
+            looseSparks.push({
+              x: p.tx, y: p.ty,
+              vx: (Math.random()-0.5)*2,
+              vy: 0.5 + Math.random()*2,
+              life: 0.4 + Math.random()*0.4,
+              decay: 0.012 + Math.random()*0.01,
+              color: p.color,
+              r: 0.6 + Math.random()*0.8
+            });
+          }
         }
         ctx.shadowBlur = 0;
         if(fw.frame > fw.life){
