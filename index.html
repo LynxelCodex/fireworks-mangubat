@@ -49,12 +49,21 @@
   resize();
   window.addEventListener('resize', resize);
 
-  const colors = [
-    '#ff0000', '#0040ff', '#00ff40', '#ffea00',
-    '#ff005c', '#ff6ec7', '#ff3cac', '#39ff14',
-    '#00ffea', '#00d4ff', '#7b2fff', '#ff9100',
-    '#ff00e5', '#ffffff', '#00ffa3', '#3d5aff'
-  ];
+  /* ── Color families: red, blue, green ── */
+  const colorFamilies = {
+    red:   ['#ff0000','#ff1a1a','#ff3333','#ff4d4d','#cc0000','#e60000','#ff6666','#ff0033','#e6194B','#ff2d55'],
+    blue:  ['#0055ff','#0077ff','#3399ff','#00aaff','#0040ff','#1a75ff','#4da6ff','#007bff','#0066cc','#3d5aff'],
+    green: ['#00ff40','#00cc33','#33ff66','#00e64d','#39ff14','#66ff66','#00ff7f','#00e676','#1de954','#76ff03']
+  };
+  const familyKeys = Object.keys(colorFamilies);
+
+  function pickFamily(){
+    return familyKeys[Math.floor(Math.random() * familyKeys.length)];
+  }
+  function pickColor(family){
+    const pal = colorFamilies[family];
+    return pal[Math.floor(Math.random() * pal.length)];
+  }
 
   function heartPoints(count, cx, cy, scale){
     const pts = [];
@@ -84,6 +93,7 @@
   }
 
   const sizes = {
+    tiny:   { outline: 50,  fill: 80,  scale: 2.8,  particleR: 1.2, life: 50,  rocketR: 2 },
     small:  { outline: 90,  fill: 160, scale: 4.5,  particleR: 1.6, life: 65,  rocketR: 2.5 },
     medium: { outline: 150, fill: 320, scale: 7,    particleR: 2.0, life: 85,  rocketR: 3 },
     huge:   { outline: 240, fill: 620, scale: 10.5, particleR: 2.4, life: 105, rocketR: 3.6 }
@@ -91,6 +101,7 @@
 
   const rockets = [];
   const fireworks = [];
+  const pendingSpreads = []; // queued secondary booms
 
   function spawnRocket(tx, ty){
     const roll = Math.random();
@@ -98,9 +109,9 @@
     const cfg = sizes[sizeKey];
     const startX = tx + (Math.random()*60 - 30);
     const startY = H + 10;
-    const dist = startY - ty;
+    const family = pickFamily();
     // speed scaled so travel time feels like a real rocket ~ 0.9 - 1.4s
-    const duration = 130 + Math.random()*60; // frames, slower ascent for more suspense
+    const duration = 130 + Math.random()*60;
     rockets.push({
       x: startX, y: startY,
       tx, ty,
@@ -108,12 +119,14 @@
       frame: 0,
       duration,
       cfg,
-      color: colors[Math.floor(Math.random()*colors.length)],
+      family,
+      color: pickColor(family),
       trail: []
     });
   }
 
-  function boom(x, y, cfg, color){
+  function boom(x, y, cfg, family, depth){
+    depth = depth || 0;
     const targetOutline = heartPoints(cfg.outline, x, y, cfg.scale);
     const targetFill = heartFillPoints(cfg.fill, x, y, cfg.scale);
     const targets = targetOutline.concat(targetFill);
@@ -122,7 +135,7 @@
       x: x, y: y,
       tx: pt.x, ty: pt.y,
       delay: Math.random()*35,
-      color: colors[Math.floor(Math.random()*colors.length)],
+      color: pickColor(family),
       r: cfg.particleR * (0.7 + Math.random()*0.6)
     }));
 
@@ -130,20 +143,58 @@
       particles,
       frame: 0,
       phase: 'form',
-      life: cfg.life
+      life: cfg.life,
+      family,
+      cx: x, cy: y,
+      cfg,
+      depth,
+      hasSpread: false
     });
+  }
+
+  /* ── Spread logic: schedule secondary booms ── */
+  function trySpread(fw){
+    if(fw.hasSpread) return;
+    fw.hasSpread = true;
+    if(fw.depth >= 2) return; // cap recursion at 2 levels
+
+    const chance = fw.depth === 0 ? 0.45 : 0.25;
+    if(Math.random() > chance) return;
+
+    const count = 2 + Math.floor(Math.random() * 3); // 2-4 sub-hearts
+    const spreadDist = fw.cfg.scale * 22 + 40;
+    const smallerKeys = fw.depth === 0 ? ['tiny','small'] : ['tiny'];
+    for(let i = 0; i < count; i++){
+      const angle = (Math.PI * 2 / count) * i + (Math.random() * 0.6 - 0.3);
+      const dist = spreadDist * (0.7 + Math.random() * 0.6);
+      const sx = fw.cx + Math.cos(angle) * dist;
+      const sy = fw.cy + Math.sin(angle) * dist;
+      const sizeKey = smallerKeys[Math.floor(Math.random() * smallerKeys.length)];
+      const childFamily = Math.random() < 0.6 ? fw.family : pickFamily();
+      const delay = 15 + Math.floor(Math.random() * 30); // staggered timing
+      pendingSpreads.push({ x: sx, y: sy, cfg: sizes[sizeKey], family: childFamily, depth: fw.depth + 1, timer: delay });
+    }
   }
 
   function step(){
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.fillRect(0,0,W,H);
 
+    // process pending spreads
+    for(let s = pendingSpreads.length - 1; s >= 0; s--){
+      pendingSpreads[s].timer--;
+      if(pendingSpreads[s].timer <= 0){
+        const sp = pendingSpreads[s];
+        boom(sp.x, sp.y, sp.cfg, sp.family, sp.depth);
+        pendingSpreads.splice(s, 1);
+      }
+    }
+
     // rockets ascending
     for(let r = rockets.length - 1; r >= 0; r--){
       const rk = rockets[r];
       rk.frame++;
       const t = Math.min(1, rk.frame / rk.duration);
-      // ease-out so it decelerates slightly like gravity fighting thrust
       const ease = 1 - Math.pow(1-t, 2);
       rk.x = rk.startX + (rk.tx - rk.startX) * ease;
       rk.y = rk.startY + (rk.ty - rk.startY) * ease;
@@ -171,7 +222,7 @@
       ctx.shadowBlur = 0;
 
       if(t >= 1){
-        boom(rk.tx, rk.ty, rk.cfg, rk.color);
+        boom(rk.tx, rk.ty, rk.cfg, rk.family, 0);
         rockets.splice(r, 1);
       }
     }
@@ -218,6 +269,8 @@
         if(fw.frame > fw.life){
           fw.phase = 'fade';
           fw.frame = 0;
+          // try spreading when the heart starts fading
+          trySpread(fw);
         }
       } else if(fw.phase === 'fade'){
         const alpha = Math.max(0, 1 - fw.frame/40);
