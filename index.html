@@ -49,6 +49,104 @@
   resize();
   window.addEventListener('resize', resize);
 
+  /* ══════ Web Audio — synthesized firework sounds ══════ */
+  let audioCtx = null;
+  function initAudio(){
+    if(audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  // Create a noise buffer (shared)
+  function getNoiseBuffer(duration){
+    const len = audioCtx.sampleRate * duration;
+    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for(let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+
+  // Rocket launch — rising whoosh
+  function playLaunch(sizeKey){
+    if(!audioCtx) return;
+    const vol = sizeKey === 'huge' ? 0.15 : sizeKey === 'medium' ? 0.1 : 0.06;
+    const dur = sizeKey === 'huge' ? 1.6 : sizeKey === 'medium' ? 1.3 : 1.0;
+    const now = audioCtx.currentTime;
+
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = getNoiseBuffer(dur + 0.2);
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 2;
+    filter.frequency.setValueAtTime(300, now);
+    filter.frequency.exponentialRampToValueAtTime(2000, now + dur * 0.7);
+    filter.frequency.exponentialRampToValueAtTime(4000, now + dur);
+
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.05);
+    gain.gain.linearRampToValueAtTime(vol * 1.3, now + dur * 0.8);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + dur + 0.1);
+
+    noise.connect(filter).connect(gain).connect(audioCtx.destination);
+    noise.start(now);
+    noise.stop(now + dur + 0.2);
+  }
+
+  // Explosion — deep thud + noise burst
+  function playBoom(sizeKey, depth){
+    if(!audioCtx) return;
+    const scale = depth > 0 ? 0.4 : 1;
+    const vol = (sizeKey === 'huge' ? 0.35 : sizeKey === 'medium' ? 0.25 : sizeKey === 'small' ? 0.15 : 0.08) * scale;
+    const dur = sizeKey === 'huge' ? 0.8 : sizeKey === 'medium' ? 0.6 : 0.4;
+    const now = audioCtx.currentTime;
+
+    // low thud oscillator
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(sizeKey === 'huge' ? 60 : 80, now);
+    osc.frequency.exponentialRampToValueAtTime(20, now + dur);
+
+    const oscGain = audioCtx.createGain();
+    oscGain.gain.setValueAtTime(vol, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    osc.connect(oscGain).connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + dur);
+
+    // noise burst
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = getNoiseBuffer(dur + 0.1);
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(3000, now);
+    filter.frequency.exponentialRampToValueAtTime(200, now + dur);
+
+    const nGain = audioCtx.createGain();
+    nGain.gain.setValueAtTime(vol * 0.7, now);
+    nGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    noise.connect(filter).connect(nGain).connect(audioCtx.destination);
+    noise.start(now);
+    noise.stop(now + dur + 0.1);
+
+    // crackle pops (tiny delayed clicks)
+    const popCount = Math.floor(3 + Math.random() * 5);
+    for(let i = 0; i < popCount; i++){
+      const pDelay = 0.05 + Math.random() * dur * 0.8;
+      const pOsc = audioCtx.createOscillator();
+      pOsc.type = 'square';
+      pOsc.frequency.setValueAtTime(800 + Math.random() * 2000, now + pDelay);
+      const pGain = audioCtx.createGain();
+      pGain.gain.setValueAtTime(0, now);
+      pGain.gain.setValueAtTime(vol * 0.15, now + pDelay);
+      pGain.gain.exponentialRampToValueAtTime(0.001, now + pDelay + 0.03);
+      pOsc.connect(pGain).connect(audioCtx.destination);
+      pOsc.start(now + pDelay);
+      pOsc.stop(now + pDelay + 0.04);
+    }
+  }
+
   /* ── Color families: red, blue, green (neon-bright) ── */
   const colorFamilies = {
     red:   ['#ff0033','#ff1744','#ff003c','#ff2d55','#ff0040','#ff355e','#ff0a54','#ff1a1a','#ff4466','#ff006a'],
@@ -119,6 +217,7 @@
   function spawnRocket(tx, ty){
     const roll = Math.random();
     const sizeKey = roll < 0.4 ? 'small' : (roll < 0.75 ? 'medium' : 'huge');
+    playLaunch(sizeKey);
     const cfg = sizes[sizeKey];
     const startX = tx + (Math.random()*60 - 30);
     const startY = H + 10;
@@ -163,6 +262,9 @@
   }
 
   function boom(x, y, cfg, family, depth){
+    // find size key name for sound volume
+    const sKey = Object.entries(sizes).find(([k,v]) => v === cfg)?.[0] || 'small';
+    playBoom(sKey, depth || 0);
     depth = depth || 0;
     const targetOutline = heartPoints(cfg.outline, x, y, cfg.scale);
     const targetFill = heartFillPoints(cfg.fill, x, y, cfg.scale);
@@ -489,6 +591,7 @@
   }
 
   canvas.addEventListener('click', (e) => {
+    initAudio();
     spawnRocket(e.clientX, e.clientY);
     const hint = document.getElementById('hint');
     if(hint){ hint.style.opacity = '0'; }
