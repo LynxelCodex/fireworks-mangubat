@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Heart Fireworks — click to launch</title>
+<title>Fireworks — click to launch</title>
 <style>
   html, body {
     margin: 0;
@@ -33,7 +33,7 @@
 </style>
 </head>
 <body>
-<div id="hint">click anywhere — watch the rocket climb before it booms into a heart</div>
+<div id="hint">click anywhere — watch the rocket climb before it bursts into a peony, chrysanthemum, willow, ring, palm, crossette or heart</div>
 <canvas id="fwcanvas"></canvas>
 
 <script>
@@ -65,12 +65,24 @@
     return buf;
   }
 
-  // Rocket launch — rising whoosh
+  // Rocket launch — rising whoosh (lift charge + air rushing past the shell)
   function playLaunch(sizeKey){
     if(!audioCtx) return;
     const vol = sizeKey === 'huge' ? 0.15 : sizeKey === 'medium' ? 0.1 : 0.06;
     const dur = sizeKey === 'huge' ? 1.6 : sizeKey === 'medium' ? 1.3 : 1.0;
     const now = audioCtx.currentTime;
+
+    // low thump of the lift charge igniting in the mortar tube
+    const thump = audioCtx.createOscillator();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(90, now);
+    thump.frequency.exponentialRampToValueAtTime(35, now + 0.18);
+    const thumpGain = audioCtx.createGain();
+    thumpGain.gain.setValueAtTime(vol * 1.1, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    thump.connect(thumpGain).connect(audioCtx.destination);
+    thump.start(now);
+    thump.stop(now + 0.22);
 
     const noise = audioCtx.createBufferSource();
     noise.buffer = getNoiseBuffer(dur + 0.2);
@@ -93,19 +105,91 @@
     noise.stop(now + dur + 0.2);
   }
 
-  // Explosion — deep thud + noise burst
-  function playBoom(sizeKey, depth){
+  // Whistle shell — rising tone with vibrato, like real whistling-tail fireworks
+  function playWhistle(dur, vol){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+
+    const thump = audioCtx.createOscillator();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(85, now);
+    thump.frequency.exponentialRampToValueAtTime(30, now + 0.15);
+    const thumpGain = audioCtx.createGain();
+    thumpGain.gain.setValueAtTime(vol * 1.2, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    thump.connect(thumpGain).connect(audioCtx.destination);
+    thump.start(now);
+    thump.stop(now + 0.2);
+
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(950, now + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(2700, now + dur * 0.9);
+
+    const lfo = audioCtx.createOscillator();
+    lfo.frequency.value = 16;
+    const lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = 45;
+    lfo.connect(lfoGain).connect(osc.frequency);
+
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.12);
+    gain.gain.setValueAtTime(vol, now + dur * 0.7);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now); lfo.start(now);
+    osc.stop(now + dur + 0.05); lfo.stop(now + dur + 0.05);
+  }
+
+  // Sparkling crackle pops — used for boom debris and mid-air crossette splits
+  function playCrackle(vol, count, startTime){
+    if(!audioCtx) return;
+    const now = startTime !== undefined ? startTime : audioCtx.currentTime;
+    for(let i = 0; i < count; i++){
+      const pDelay = 0.02 + Math.random() * 0.5;
+      const pOsc = audioCtx.createOscillator();
+      pOsc.type = 'square';
+      pOsc.frequency.setValueAtTime(800 + Math.random() * 2200, now + pDelay);
+      const pGain = audioCtx.createGain();
+      pGain.gain.setValueAtTime(0, now);
+      pGain.gain.setValueAtTime(vol, now + pDelay);
+      pGain.gain.exponentialRampToValueAtTime(0.001, now + pDelay + 0.03);
+      pOsc.connect(pGain).connect(audioCtx.destination);
+      pOsc.start(now + pDelay);
+      pOsc.stop(now + pDelay + 0.04);
+    }
+  }
+
+  // Explosion — sharp crack + deep thud + noise burst + distant echo,
+  // modeled after how a real shell sounds: a percussive transient first,
+  // then the low-frequency rumble arrives a beat behind it.
+  function playBoom(sizeKey, depth, shape){
     if(!audioCtx) return;
     const scale = depth > 0 ? 0.4 : 1;
     const vol = (sizeKey === 'huge' ? 0.35 : sizeKey === 'medium' ? 0.25 : sizeKey === 'small' ? 0.15 : 0.08) * scale;
     const dur = sizeKey === 'huge' ? 0.8 : sizeKey === 'medium' ? 0.6 : 0.4;
     const now = audioCtx.currentTime;
 
-    // low thud oscillator
+    // sharp crack transient — the initial percussive "snap" of the burst
+    const crack = audioCtx.createBufferSource();
+    crack.buffer = getNoiseBuffer(0.07);
+    const crackFilter = audioCtx.createBiquadFilter();
+    crackFilter.type = 'highpass';
+    crackFilter.frequency.value = 1400;
+    const crackGain = audioCtx.createGain();
+    crackGain.gain.setValueAtTime(vol * 0.9, now);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+    crack.connect(crackFilter).connect(crackGain).connect(audioCtx.destination);
+    crack.start(now);
+    crack.stop(now + 0.07);
+
+    // low thud oscillator — the rumble
     const osc = audioCtx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(sizeKey === 'huge' ? 60 : 80, now);
-    osc.frequency.exponentialRampToValueAtTime(20, now + dur);
+    osc.frequency.setValueAtTime(sizeKey === 'huge' ? 55 : 78, now);
+    osc.frequency.exponentialRampToValueAtTime(18, now + dur);
 
     const oscGain = audioCtx.createGain();
     oscGain.gain.setValueAtTime(vol, now);
@@ -120,8 +204,8 @@
 
     const filter = audioCtx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(3000, now);
-    filter.frequency.exponentialRampToValueAtTime(200, now + dur);
+    filter.frequency.setValueAtTime(3200, now);
+    filter.frequency.exponentialRampToValueAtTime(180, now + dur);
 
     const nGain = audioCtx.createGain();
     nGain.gain.setValueAtTime(vol * 0.7, now);
@@ -130,20 +214,40 @@
     noise.start(now);
     noise.stop(now + dur + 0.1);
 
-    // crackle pops (tiny delayed clicks)
-    const popCount = Math.floor(3 + Math.random() * 5);
-    for(let i = 0; i < popCount; i++){
-      const pDelay = 0.05 + Math.random() * dur * 0.8;
-      const pOsc = audioCtx.createOscillator();
-      pOsc.type = 'square';
-      pOsc.frequency.setValueAtTime(800 + Math.random() * 2000, now + pDelay);
-      const pGain = audioCtx.createGain();
-      pGain.gain.setValueAtTime(0, now);
-      pGain.gain.setValueAtTime(vol * 0.15, now + pDelay);
-      pGain.gain.exponentialRampToValueAtTime(0.001, now + pDelay + 0.03);
-      pOsc.connect(pGain).connect(audioCtx.destination);
-      pOsc.start(now + pDelay);
-      pOsc.stop(now + pDelay + 0.04);
+    // distant echo tap — simulates the boom reflecting back a beat later
+    if(depth === 0 && sizeKey !== 'tiny'){
+      const echoDelay = 0.13 + Math.random() * 0.06;
+      const echo = audioCtx.createBufferSource();
+      echo.buffer = getNoiseBuffer(dur * 0.6);
+      const echoFilter = audioCtx.createBiquadFilter();
+      echoFilter.type = 'lowpass';
+      echoFilter.frequency.value = 850;
+      const echoGain = audioCtx.createGain();
+      echoGain.gain.setValueAtTime(vol * 0.26, now + echoDelay);
+      echoGain.gain.exponentialRampToValueAtTime(0.001, now + echoDelay + dur * 0.6);
+      echo.connect(echoFilter).connect(echoGain).connect(audioCtx.destination);
+      echo.start(now + echoDelay);
+      echo.stop(now + echoDelay + dur * 0.6 + 0.05);
+    }
+
+    // crackle pops (tiny delayed clicks from burning stars)
+    playCrackle(vol * 0.16, Math.floor(3 + Math.random() * 5), now);
+
+    // sizzling fizz tail for glitter-heavy shell types (willow/chrysanthemum/palm)
+    if(shape === 'willow' || shape === 'chrysanthemum' || shape === 'palm'){
+      const fizzDur = 1.3 + Math.random() * 0.8;
+      const fizz = audioCtx.createBufferSource();
+      fizz.buffer = getNoiseBuffer(fizzDur);
+      const fizzFilter = audioCtx.createBiquadFilter();
+      fizzFilter.type = 'highpass';
+      fizzFilter.frequency.value = 4500;
+      const fizzGain = audioCtx.createGain();
+      fizzGain.gain.setValueAtTime(0, now);
+      fizzGain.gain.linearRampToValueAtTime(vol * 0.18, now + 0.15);
+      fizzGain.gain.exponentialRampToValueAtTime(0.001, now + fizzDur);
+      fizz.connect(fizzFilter).connect(fizzGain).connect(audioCtx.destination);
+      fizz.start(now);
+      fizz.stop(now + fizzDur);
     }
   }
 
@@ -160,6 +264,7 @@
     green: '#39ff14'
   };
   const familyKeys = Object.keys(colorFamilies);
+  const goldPalette = ['#ffd700','#ffb347','#ffcc33','#ff9e2c','#ffe066','#e8a33d'];
 
   function pickFamily(){
     return familyKeys[Math.floor(Math.random() * familyKeys.length)];
@@ -170,6 +275,27 @@
   }
   function glowColor(family){
     return neonGlowMap[family] || '#ffffff';
+  }
+
+  /* ── Real firework shell shapes ──
+     heart          — the original tweened heart bloom
+     peony          — classic round burst, no trail (most common shell)
+     chrysanthemum  — round burst that leaves glittering trails as it expands
+     willow         — slow, drooping golden trails, like a weeping willow
+     ring           — particles launched at matching speed form a ring
+     palm           — a handful of thick brilliant arms, like palm fronds
+     crossette      — arms that split into smaller stars mid-flight */
+  function pickShape(){
+    const table = [
+      ['heart', 0.14], ['peony', 0.24], ['chrysanthemum', 0.20],
+      ['willow', 0.16], ['ring', 0.11], ['palm', 0.10], ['crossette', 0.05]
+    ];
+    let r = Math.random(), acc = 0;
+    for(const [name, p] of table){
+      acc += p;
+      if(r <= acc) return name;
+    }
+    return 'peony';
   }
 
   function heartPoints(count, cx, cy, scale){
@@ -217,11 +343,17 @@
   function spawnRocket(tx, ty){
     const roll = Math.random();
     const sizeKey = roll < 0.4 ? 'small' : (roll < 0.75 ? 'medium' : 'huge');
-    playLaunch(sizeKey);
     const cfg = sizes[sizeKey];
     const startX = tx + (Math.random()*60 - 30);
     const startY = H + 10;
     const family = pickFamily();
+
+    if(Math.random() < 0.35){
+      const wDur = sizeKey === 'huge' ? 1.6 : sizeKey === 'medium' ? 1.3 : 1.0;
+      playWhistle(wDur, sizeKey === 'huge' ? 0.12 : sizeKey === 'medium' ? 0.09 : 0.06);
+    } else {
+      playLaunch(sizeKey);
+    }
 
     const traj = trajectoryTypes[Math.floor(Math.random() * trajectoryTypes.length)];
 
@@ -261,22 +393,123 @@
     });
   }
 
-  function boom(x, y, cfg, family, depth){
+  /* Build the particle set for a given real-world shell shape.
+     'heart' keeps the original tween-to-target bloom; every other shape
+     is a true physics burst (velocity + drag + gravity) so it expands,
+     arcs and falls the way an actual firework star does. */
+  function makeBurst(shape, x, y, cfg, family){
+    if(shape === 'heart'){
+      const targetOutline = heartPoints(cfg.outline, x, y, cfg.scale);
+      const targetFill = heartFillPoints(cfg.fill, x, y, cfg.scale);
+      const targets = targetOutline.concat(targetFill);
+      const particles = targets.map(pt => ({
+        x: x, y: y,
+        tx: pt.x, ty: pt.y,
+        delay: Math.random()*35,
+        color: pickColor(family),
+        r: cfg.particleR * (0.7 + Math.random()*0.6)
+      }));
+      return { mode: 'tween', particles };
+    }
+
+    const particles = [];
+    function col(){
+      if(shape === 'willow' && Math.random() < 0.7){
+        return goldPalette[Math.floor(Math.random() * goldPalette.length)];
+      }
+      return pickColor(family);
+    }
+
+    if(shape === 'peony' || shape === 'chrysanthemum'){
+      const n = Math.round(cfg.fill * 0.55);
+      for(let i=0;i<n;i++){
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 3.5 + Math.random() * (cfg.scale * 0.55);
+        particles.push({
+          x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+          color: col(), r: cfg.particleR * (0.8 + Math.random()*0.6),
+          life: 1, decay: 0.006 + Math.random()*0.006,
+          drag: 0.986, gravity: 0.045,
+          trail: shape === 'chrysanthemum' ? [] : null, trailLen: 10,
+          crackle: false
+        });
+      }
+    } else if(shape === 'ring'){
+      const n = Math.round(cfg.outline * 1.4);
+      const speed = 4 + cfg.scale * 0.35;
+      for(let i=0;i<n;i++){
+        const angle = (i/n) * Math.PI * 2;
+        const sp = speed * (0.94 + Math.random()*0.12);
+        particles.push({
+          x, y, vx: Math.cos(angle)*sp, vy: Math.sin(angle)*sp,
+          color: col(), r: cfg.particleR * (0.9 + Math.random()*0.3),
+          life: 1, decay: 0.008 + Math.random()*0.004,
+          drag: 0.99, gravity: 0.05,
+          trail: null, crackle: false
+        });
+      }
+    } else if(shape === 'willow'){
+      const n = Math.round(cfg.fill * 0.5);
+      for(let i=0;i<n;i++){
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * (cfg.scale * 0.3);
+        particles.push({
+          x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+          color: col(), r: cfg.particleR * (0.7 + Math.random()*0.5),
+          life: 1, decay: 0.0032 + Math.random()*0.003,
+          drag: 0.972, gravity: 0.028,
+          trail: [], trailLen: 20,
+          crackle: false
+        });
+      }
+    } else if(shape === 'palm'){
+      const armCount = 6 + Math.floor(Math.random()*4);
+      const perArm = Math.max(6, Math.round(cfg.fill/armCount*0.4));
+      for(let a=0;a<armCount;a++){
+        const baseAngle = (a/armCount) * Math.PI * 2 + (Math.random()*0.2-0.1);
+        for(let i=0;i<perArm;i++){
+          const angle = baseAngle + (Math.random()*0.16-0.08);
+          const speed = (6 + Math.random()*(cfg.scale*0.5)) * (0.7 + i/perArm*0.4);
+          particles.push({
+            x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+            color: col(), r: cfg.particleR * (1 + Math.random()*0.5),
+            life: 1, decay: 0.005 + Math.random()*0.004,
+            drag: 0.975, gravity: 0.05,
+            trail: [], trailLen: 16,
+            crackle: false
+          });
+        }
+      }
+    } else if(shape === 'crossette'){
+      const arms = 4 + (Math.random() < 0.5 ? 0 : 4);
+      const perArm = 3;
+      for(let a=0;a<arms;a++){
+        const baseAngle = (a/arms) * Math.PI * 2;
+        for(let i=0;i<perArm;i++){
+          const angle = baseAngle + (Math.random()*0.1-0.05);
+          const speed = 4.5 + Math.random() * (cfg.scale * 0.4);
+          particles.push({
+            x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+            color: col(), r: cfg.particleR * (0.9 + Math.random()*0.4),
+            life: 1, decay: 0.006 + Math.random()*0.004,
+            drag: 0.985, gravity: 0.045,
+            trail: null,
+            crackle: true, popped: false, popAt: 0.4 + Math.random()*0.25
+          });
+        }
+      }
+    }
+    return { mode: 'physics', particles };
+  }
+
+  function boom(x, y, cfg, family, depth, forcedShape){
+    depth = depth || 0;
     // find size key name for sound volume
     const sKey = Object.entries(sizes).find(([k,v]) => v === cfg)?.[0] || 'small';
-    playBoom(sKey, depth || 0);
-    depth = depth || 0;
-    const targetOutline = heartPoints(cfg.outline, x, y, cfg.scale);
-    const targetFill = heartFillPoints(cfg.fill, x, y, cfg.scale);
-    const targets = targetOutline.concat(targetFill);
+    const shape = forcedShape || pickShape();
+    playBoom(sKey, depth, shape);
 
-    const particles = targets.map(pt => ({
-      x: x, y: y,
-      tx: pt.x, ty: pt.y,
-      delay: Math.random()*35,
-      color: pickColor(family),
-      r: cfg.particleR * (0.7 + Math.random()*0.6)
-    }));
+    const burst = makeBurst(shape, x, y, cfg, family);
 
     // burst sparks that fly outward on explosion
     const sparkCount = 40 + Math.floor(Math.random() * 80);
@@ -295,15 +528,18 @@
     }
 
     fireworks.push({
-      particles,
+      mode: burst.mode,
+      particles: burst.particles,
       frame: 0,
       phase: 'form',
       life: cfg.life,
       family,
+      shape,
       cx: x, cy: y,
       cfg,
       depth,
-      hasSpread: false
+      hasSpread: false,
+      crackleSoundPlayed: false
     });
   }
 
@@ -326,8 +562,9 @@
       const sy = fw.cy + Math.sin(angle) * dist;
       const sizeKey = smallerKeys[Math.floor(Math.random() * smallerKeys.length)];
       const childFamily = Math.random() < 0.6 ? fw.family : pickFamily();
+      const childShape = pickShape();
       const delay = 15 + Math.floor(Math.random() * 30); // staggered timing
-      pendingSpreads.push({ x: sx, y: sy, cfg: sizes[sizeKey], family: childFamily, depth: fw.depth + 1, timer: delay });
+      pendingSpreads.push({ x: sx, y: sy, cfg: sizes[sizeKey], family: childFamily, depth: fw.depth + 1, timer: delay, shape: childShape });
     }
   }
 
@@ -340,7 +577,7 @@
       pendingSpreads[s].timer--;
       if(pendingSpreads[s].timer <= 0){
         const sp = pendingSpreads[s];
-        boom(sp.x, sp.y, sp.cfg, sp.family, sp.depth);
+        boom(sp.x, sp.y, sp.cfg, sp.family, sp.depth, sp.shape);
         pendingSpreads.splice(s, 1);
       }
     }
@@ -480,6 +717,107 @@
     for(let f = fireworks.length - 1; f >= 0; f--){
       const fw = fireworks[f];
       fw.frame++;
+
+      if(fw.mode === 'physics'){
+        const emberColor = '#4a2408';
+        let aliveCount = 0;
+        for(let pi = fw.particles.length - 1; pi >= 0; pi--){
+          const p = fw.particles[pi];
+
+          // fading trail (chrysanthemum / willow / palm leave glowing tails)
+          if(p.trail){
+            p.trail.push({x: p.x, y: p.y, life: 1});
+            if(p.trail.length > p.trailLen) p.trail.shift();
+            for(const tp of p.trail){
+              tp.life -= 0.09;
+              if(tp.life <= 0) continue;
+              ctx.globalAlpha = tp.life * p.life * 0.55;
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = p.color;
+              ctx.fillStyle = p.color;
+              ctx.beginPath();
+              ctx.arc(tp.x, tp.y, p.r * 0.55, 0, Math.PI*2);
+              ctx.fill();
+            }
+          }
+
+          // real physics: outward velocity, air drag, gravity pulling it down
+          p.vy += p.gravity;
+          p.vx *= p.drag;
+          p.vy *= p.drag;
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= p.decay;
+
+          if(p.life <= 0){ fw.particles.splice(pi, 1); continue; }
+          aliveCount++;
+
+          // stars dim toward a burnt ember color right before they extinguish
+          const burning = p.life < 0.22;
+          const drawColor = burning ? emberColor : p.color;
+
+          ctx.globalAlpha = Math.min(1, p.life) * 0.55;
+          ctx.shadowBlur = burning ? 10 : 22;
+          ctx.shadowColor = burning ? '#ff5500' : drawColor;
+          ctx.fillStyle = drawColor;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r * (burning ? 0.9 : 1.3), 0, Math.PI*2);
+          ctx.fill();
+
+          ctx.globalAlpha = Math.min(1, p.life);
+          ctx.shadowBlur = burning ? 4 : 12;
+          ctx.fillStyle = drawColor;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+          ctx.fill();
+
+          if(!burning){
+            ctx.globalAlpha = p.life * 0.3;
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r * 0.4, 0, Math.PI*2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1;
+
+          // occasional shed glitter
+          if(!burning && Math.random() < 0.02){
+            looseSparks.push({
+              x: p.x, y: p.y,
+              vx: (Math.random()-0.5)*1.5, vy: 0.4 + Math.random()*1.5,
+              life: 0.3 + Math.random()*0.3, decay: 0.015 + Math.random()*0.01,
+              color: p.color, r: 0.5 + Math.random()*0.7
+            });
+          }
+
+          // crossette secondary split — the star breaks into smaller stars mid-flight
+          if(p.crackle && !p.popped && p.life < p.popAt){
+            p.popped = true;
+            const miniCount = 4 + Math.floor(Math.random()*4);
+            for(let m=0;m<miniCount;m++){
+              const angle = Math.random() * Math.PI * 2;
+              const speed = 1.5 + Math.random()*3;
+              fw.particles.push({
+                x: p.x, y: p.y,
+                vx: Math.cos(angle)*speed + p.vx*0.25,
+                vy: Math.sin(angle)*speed + p.vy*0.25,
+                color: p.color, r: p.r * 0.6,
+                life: 1, decay: 0.02 + Math.random()*0.018,
+                drag: 0.98, gravity: 0.05,
+                trail: null, crackle: false
+              });
+            }
+            p.life = 0;
+            if(!fw.crackleSoundPlayed){ fw.crackleSoundPlayed = true; playCrackle(0.22, 6); }
+          }
+        }
+        ctx.shadowBlur = 0;
+
+        if(!fw.hasSpread && fw.frame > 42) trySpread(fw);
+        if(aliveCount === 0){ fireworks.splice(f, 1); }
+        continue;
+      }
 
       if(fw.phase === 'form'){
         let allSettled = true;
