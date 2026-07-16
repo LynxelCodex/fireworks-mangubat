@@ -48,6 +48,7 @@
   }
   resize();
   window.addEventListener('resize', resize);
+  initClouds();
 
   /* ══════ Web Audio — synthesized firework sounds ══════ */
   let audioCtx = null;
@@ -336,6 +337,77 @@
   const fireworks = [];
   const pendingSpreads = []; // queued secondary booms
   const looseSparks = [];    // free-flying sparks from explosions
+  const flashes = [];        // brief bright pop of light at the moment of each burst
+
+  /* ── Drifting night clouds, lit from below by nearby bursts ── */
+  const clouds = [];
+  function makeCloud(){
+    const w = 160 + Math.random() * 260;
+    const h = 45 + Math.random() * 55;
+    const puffCount = 5 + Math.floor(Math.random() * 4);
+    const puffs = [];
+    for(let i=0;i<puffCount;i++){
+      puffs.push({
+        dx: (Math.random()-0.5) * w,
+        dy: (Math.random()-0.5) * h * 0.5,
+        r: h * 0.35 + Math.random() * h * 0.35
+      });
+    }
+    return {
+      x: Math.random() * (W + 400) - 200,
+      y: H * 0.05 + Math.random() * H * 0.32,
+      w, h, puffs,
+      speed: 0.04 + Math.random() * 0.1,
+      baseAlpha: 0.05 + Math.random() * 0.07
+    };
+  }
+  function initClouds(){
+    clouds.length = 0;
+    const count = 5 + Math.floor(Math.random() * 3);
+    for(let i=0;i<count;i++) clouds.push(makeCloud());
+  }
+
+  function cloudLighting(cx, cy){
+    // how much nearby burst light should illuminate a point in the sky,
+    // plus which color family lit it most (nearest brightest source wins)
+    let light = 0, nearestFamily = null, nearestScore = -1;
+    for(const fw of fireworks){
+      const dx = fw.cx - cx, dy = fw.cy - cy;
+      const distSq = dx*dx + dy*dy + 1;
+      const contribution = Math.min(0.5, 5500 / distSq);
+      light += contribution;
+      if(contribution > nearestScore){ nearestScore = contribution; nearestFamily = fw.family; }
+    }
+    return { light: Math.min(0.85, light), family: nearestFamily };
+  }
+
+  function drawClouds(){
+    ctx.globalCompositeOperation = 'source-over';
+    for(const c of clouds){
+      c.x += c.speed;
+      if(c.x - c.w > W + 100){ c.x = -c.w - 100; }
+      const { light, family } = cloudLighting(c.x, c.y);
+      const alpha = Math.min(0.6, c.baseAlpha + light);
+      let tint = '210,215,225';
+      if(light > 0.03){
+        if(family === 'red') tint = '255,170,160';
+        else if(family === 'blue') tint = '160,215,255';
+        else if(family === 'green') tint = '175,255,190';
+        else tint = '255,235,210';
+      }
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `rgb(${tint})`;
+      ctx.shadowBlur = light > 0.05 ? 26 : 0;
+      ctx.shadowColor = `rgb(${tint})`;
+      for(const p of c.puffs){
+        ctx.beginPath();
+        ctx.ellipse(c.x + p.dx, c.y + p.dy, p.r * 1.4, p.r, 0, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
 
   /* ── Trajectory types ── */
   const trajectoryTypes = ['snake','spiral','wander'];
@@ -511,6 +583,9 @@
 
     const burst = makeBurst(shape, x, y, cfg, family);
 
+    // bright pop of light at the instant of the burst
+    flashes.push({ x, y, r: cfg.scale * 15, life: 1 });
+
     // burst sparks that fly outward on explosion
     const sparkCount = 40 + Math.floor(Math.random() * 80);
     for(let i = 0; i < sparkCount; i++){
@@ -569,8 +644,31 @@
   }
 
   function step(){
+    ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.fillRect(0,0,W,H);
+
+    drawClouds();
+
+    // switch to additive blending for every bright pyrotechnic element below —
+    // overlapping light adds up instead of just overwriting, which is what
+    // makes a real firework burst look genuinely brilliant
+    ctx.globalCompositeOperation = 'lighter';
+
+    // bright pop of light at the instant each shell bursts
+    for(let i = flashes.length - 1; i >= 0; i--){
+      const fl = flashes[i];
+      fl.life -= 0.08;
+      if(fl.life <= 0){ flashes.splice(i, 1); continue; }
+      const grad = ctx.createRadialGradient(fl.x, fl.y, 0, fl.x, fl.y, fl.r);
+      grad.addColorStop(0, `rgba(255,255,255,${fl.life * 0.85})`);
+      grad.addColorStop(0.4, `rgba(255,238,200,${fl.life * 0.4})`);
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(fl.x, fl.y, fl.r, 0, Math.PI*2);
+      ctx.fill();
+    }
 
     // process pending spreads
     for(let s = pendingSpreads.length - 1; s >= 0; s--){
@@ -592,7 +690,7 @@
       sp.life -= sp.decay;
       if(sp.life <= 0){ looseSparks.splice(si, 1); continue; }
       ctx.globalAlpha = Math.min(1, sp.life);
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = 20;
       ctx.shadowColor = sp.color;
       ctx.fillStyle = sp.color;
       ctx.beginPath();
@@ -684,7 +782,7 @@
         tp.life -= 0.04;
         if(tp.life <= 0) continue;
         ctx.globalAlpha = Math.max(0, tp.life);
-        ctx.shadowBlur = 18;
+        ctx.shadowBlur = 24;
         ctx.shadowColor = rk.color;
         ctx.fillStyle = rk.color;
         ctx.beginPath();
@@ -694,13 +792,13 @@
       ctx.globalAlpha = 1;
 
       // neon head glow — double pass for intense bloom
-      ctx.shadowBlur = 35;
+      ctx.shadowBlur = 44;
       ctx.shadowColor = glowColor(rk.family);
       ctx.fillStyle = rk.color;
       ctx.beginPath();
       ctx.arc(rk.x, rk.y, rk.cfg.rocketR * 1.3, 0, Math.PI*2);
       ctx.fill();
-      ctx.shadowBlur = 14;
+      ctx.shadowBlur = 18;
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
       ctx.arc(rk.x, rk.y, rk.cfg.rocketR, 0, Math.PI*2);
@@ -756,8 +854,8 @@
           const burning = p.life < 0.22;
           const drawColor = burning ? emberColor : p.color;
 
-          ctx.globalAlpha = Math.min(1, p.life) * 0.55;
-          ctx.shadowBlur = burning ? 10 : 22;
+          ctx.globalAlpha = Math.min(1, p.life) * 0.7;
+          ctx.shadowBlur = burning ? 10 : 28;
           ctx.shadowColor = burning ? '#ff5500' : drawColor;
           ctx.fillStyle = drawColor;
           ctx.beginPath();
@@ -765,14 +863,14 @@
           ctx.fill();
 
           ctx.globalAlpha = Math.min(1, p.life);
-          ctx.shadowBlur = burning ? 4 : 12;
+          ctx.shadowBlur = burning ? 4 : 16;
           ctx.fillStyle = drawColor;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
           ctx.fill();
 
           if(!burning){
-            ctx.globalAlpha = p.life * 0.3;
+            ctx.globalAlpha = p.life * 0.45;
             ctx.shadowBlur = 0;
             ctx.fillStyle = '#ffffff';
             ctx.beginPath();
@@ -829,16 +927,16 @@
           const curX = p.x + (p.tx - p.x) * ease;
           const curY = p.y + (p.ty - p.y) * ease;
           // outer neon glow
-          ctx.shadowBlur = 24;
+          ctx.shadowBlur = 30;
           ctx.shadowColor = p.color;
           ctx.fillStyle = p.color;
           ctx.beginPath();
           ctx.arc(curX, curY, p.r * 1.2, 0, Math.PI*2);
           ctx.fill();
           // bright core
-          ctx.shadowBlur = 8;
+          ctx.shadowBlur = 10;
           ctx.fillStyle = '#ffffff';
-          ctx.globalAlpha = 0.4;
+          ctx.globalAlpha = 0.55;
           ctx.beginPath();
           ctx.arc(curX, curY, p.r * 0.5, 0, Math.PI*2);
           ctx.fill();
@@ -854,8 +952,8 @@
         for(const p of fw.particles){
           const tw = 0.65 + 0.35*Math.sin((fw.frame*0.15) + p.tx);
           // wide soft neon bloom
-          ctx.globalAlpha = tw * 0.5;
-          ctx.shadowBlur = 40;
+          ctx.globalAlpha = tw * 0.65;
+          ctx.shadowBlur = 48;
           ctx.shadowColor = glow;
           ctx.fillStyle = glow;
           ctx.beginPath();
@@ -863,14 +961,14 @@
           ctx.fill();
           // bright core particle
           ctx.globalAlpha = tw;
-          ctx.shadowBlur = 16;
+          ctx.shadowBlur = 20;
           ctx.shadowColor = p.color;
           ctx.fillStyle = p.color;
           ctx.beginPath();
           ctx.arc(p.tx, p.ty, p.r, 0, Math.PI*2);
           ctx.fill();
           // white-hot center
-          ctx.globalAlpha = tw * 0.35;
+          ctx.globalAlpha = tw * 0.5;
           ctx.shadowBlur = 0;
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
@@ -902,15 +1000,15 @@
         const alpha = Math.max(0, 1 - fw.frame/40);
         const glow = glowColor(fw.family);
         for(const p of fw.particles){
-          ctx.globalAlpha = alpha * 0.4;
-          ctx.shadowBlur = 30;
+          ctx.globalAlpha = alpha * 0.55;
+          ctx.shadowBlur = 36;
           ctx.shadowColor = glow;
           ctx.fillStyle = glow;
           ctx.beginPath();
           ctx.arc(p.tx, p.ty, p.r * 1.8, 0, Math.PI*2);
           ctx.fill();
           ctx.globalAlpha = alpha;
-          ctx.shadowBlur = 10;
+          ctx.shadowBlur = 14;
           ctx.shadowColor = p.color;
           ctx.fillStyle = p.color;
           ctx.beginPath();
