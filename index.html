@@ -30,10 +30,105 @@
     left: 0;
     cursor: crosshair;
   }
+  #ammo-container {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 15px;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .ammo-icon {
+    width: 14px;
+    height: 36px;
+    background: linear-gradient(to right, #e0e0e0, #ffffff, #c0c0c0);
+    border-radius: 50% 50% 10% 10%;
+    position: relative;
+    box-shadow: 0 0 10px rgba(255,255,255,0.5);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .ammo-icon::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 6px;
+    width: 2px;
+    height: 8px;
+    background: #ffb300;
+  }
+  .ammo-icon::before {
+    content: '';
+    position: absolute;
+    top: 5px;
+    left: 2px;
+    width: 10px;
+    height: 12px;
+    background: #f44336;
+    border-radius: 50% 50% 0 0;
+  }
+  .ammo-icon.empty {
+    opacity: 0.2;
+    transform: scale(0.8) translateY(10px);
+    box-shadow: none;
+    filter: grayscale(100%);
+  }
+  
+  #firework-box {
+    position: fixed;
+    bottom: 0px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 110px;
+    height: 60px;
+    background: linear-gradient(135deg, #d32f2f, #b71c1c);
+    border: 3px solid #111;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    box-shadow: 0 0 30px rgba(211, 47, 47, 0.3), inset 0 5px 15px rgba(0,0,0,0.4);
+    display: flex;
+    justify-content: space-around;
+    align-items: flex-end;
+    padding: 0 10px;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .tube {
+    width: 20px;
+    background: linear-gradient(to right, #333, #555, #222);
+    border: 2px solid #000;
+    border-bottom: none;
+    border-radius: 3px 3px 0 0;
+    position: relative;
+  }
+  .tube::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -2px;
+    right: -2px;
+    height: 6px;
+    background: #111;
+    border-radius: 2px;
+  }
 </style>
 </head>
 <body>
 <div id="hint">click anywhere — watch the rocket climb before it bursts into a peony, chrysanthemum, willow, ring, palm, crossette or heart</div>
+
+<div id="ammo-container">
+  <div class="ammo-icon"></div>
+  <div class="ammo-icon"></div>
+  <div class="ammo-icon"></div>
+</div>
+
+<div id="firework-box">
+  <div class="tube" style="height: 35px;"></div>
+  <div class="tube" style="height: 45px;"></div>
+  <div class="tube" style="height: 35px;"></div>
+</div>
+
 <canvas id="fwcanvas"></canvas>
 
 <script>
@@ -41,13 +136,240 @@
   const canvas = document.getElementById('fwcanvas');
   const ctx = canvas.getContext('2d');
   let W, H;
+  let cityCanvas = null;
+
+  function generateCity() {
+    cityCanvas = document.createElement('canvas');
+    cityCanvas.width = W;
+    cityCanvas.height = Math.min(250, H * 0.35);
+    const cctx = cityCanvas.getContext('2d');
+    const ch = cityCanvas.height;
+    
+    // Deep background layer
+    cctx.fillStyle = '#010204';
+    let x = 0;
+    while(x < W) {
+      const bw = 40 + Math.random() * 80;
+      const bh = 20 + Math.random() * (ch * 0.5);
+      cctx.fillRect(x, ch - bh, bw, bh);
+      x += bw * (0.8 + Math.random() * 0.5);
+    }
+
+    // Midground layer
+    x = 0;
+    while(x < W) {
+      const bw = 30 + Math.random() * 70;
+      const bh = 30 + Math.random() * (ch * 0.8);
+      cctx.fillStyle = '#020407';
+      if (Math.random() > 0.7 && bw > 50) {
+         cctx.fillRect(x, ch - bh*0.7, bw, bh*0.7);
+         cctx.fillRect(x + 10, ch - bh, bw - 20, bh*0.3);
+      } else {
+         cctx.fillRect(x, ch - bh, bw, bh);
+      }
+      x += bw + (Math.random() * 20 - 5);
+      if (Math.random() < 0.1) x += 80;
+    }
+
+    // Foreground layer (darkest, dense windows)
+    x = 0;
+    while(x < W) {
+      const bw = 25 + Math.random() * 60;
+      const bh = 40 + Math.random() * (ch - 40);
+      cctx.fillStyle = '#04060a';
+      
+      cctx.fillRect(x, ch - bh, bw, bh);
+      
+      // Spire / Antenna
+      if (bh > ch * 0.6 && Math.random() > 0.5) {
+         cctx.fillStyle = '#04060a';
+         cctx.fillRect(x + bw/2 - 1, ch - bh - 20, 2, 20);
+         cctx.fillStyle = 'rgba(255, 50, 50, 0.8)';
+         cctx.fillRect(x + bw/2 - 1.5, ch - bh - 20, 3, 3);
+         cctx.fillStyle = '#04060a';
+      }
+      
+      // Windows
+      const winCols = Math.floor(bw / 14);
+      const winRows = Math.floor(bh / 20);
+      const winColor = Math.random() > 0.4 ? '#ffeeba' : (Math.random() > 0.5 ? '#b8e1ff' : '#ffd54f');
+      for(let r=0; r<winRows; r++) {
+         for(let c=0; c<winCols; c++) {
+            if (Math.random() < 0.15) { 
+               cctx.fillStyle = winColor;
+               cctx.globalAlpha = 0.3 + Math.random() * 0.7;
+               cctx.fillRect(x + c * 14 + 6, ch - bh + r * 20 + 8, 4, 8);
+            }
+         }
+      }
+      cctx.globalAlpha = 1.0;
+      
+      x += bw + (Math.random() * 10 - 2);
+    }
+  }
+
+  function drawCity(){
+    if(!cityCanvas) return;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(cityCanvas, 0, H - cityCanvas.height);
+  }
+
+
+
+  /* ── Night Sky (Stars and Moon) ── */
+  const stars = [];
+  const shootingStars = [];
+  let moonX = 0;
+  let moonY = 0;
+
+  function spawnShootingStar() {
+     const x = Math.random() * W;
+     const y = Math.random() * (H * 0.4);
+     const angle = Math.PI/4 + (Math.random() - 0.5) * 0.4;
+     const speed = 15 + Math.random() * 15;
+     const len = 40 + Math.random() * 60;
+     shootingStars.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        len: len,
+        life: 1.0,
+        decay: 0.02 + Math.random() * 0.03
+     });
+  }
+
+  function initSky(){
+    stars.length = 0;
+    const count = Math.floor((W * H) / 5000); // star density
+    for(let i=0; i<count; i++){
+       stars.push({
+          x: Math.random() * W,
+          y: Math.random() * (H * 0.5),
+          r: 0.6 + Math.random() * 1.2,
+          alpha: Math.random(),
+          dir: Math.random() > 0.5 ? 1 : -1,
+          speed: 0.005 + Math.random() * 0.015
+       });
+    }
+    if (moonX === 0) {
+      moonX = W * 0.15;
+      moonY = Math.min(200, H * 0.2);
+    }
+  }
+
+  function drawSky(){
+    // Moon
+    moonX += 0.015;
+    if(moonX > W + 100){
+      moonX = -100;
+      moonY = 50 + Math.random() * (H * 0.25);
+    }
+    
+    // Moon glow
+    drawGlow(moonX, moonY, 100, '#fffaee', 0.15);
+    
+    // Moon body
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#fffaee';
+    ctx.beginPath();
+    ctx.arc(moonX, moonY, 25, 0, Math.PI*2);
+    ctx.fill();
+    
+    // Craters (subtle)
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.beginPath();
+    ctx.arc(moonX - 6, moonY + 4, 6, 0, Math.PI*2);
+    ctx.arc(moonX + 8, moonY - 8, 4, 0, Math.PI*2);
+    ctx.arc(moonX + 4, moonY + 10, 5, 0, Math.PI*2);
+    ctx.fill();
+
+    // Stars
+    ctx.globalCompositeOperation = 'lighter';
+    for(const s of stars){
+       s.alpha += s.speed * s.dir;
+       if(s.alpha >= 1){ s.alpha = 1; s.dir = -1; }
+       if(s.alpha <= 0.1){ s.alpha = 0.1; s.dir = 1; }
+       
+       ctx.globalAlpha = s.alpha;
+       ctx.fillStyle = '#ffffff';
+       ctx.beginPath();
+       ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+       ctx.fill();
+    }
+    
+    // Shooting Stars
+    if (Math.random() < 0.003) { 
+       spawnShootingStar();
+    }
+    for(let i = shootingStars.length - 1; i >= 0; i--) {
+       const ss = shootingStars[i];
+       ss.x += ss.vx;
+       ss.y += ss.vy;
+       ss.life -= ss.decay;
+       
+       if (ss.life <= 0) {
+          swapRemove(shootingStars, i);
+          continue;
+       }
+       
+       const alpha = Math.min(1, ss.life * 2); 
+       const tailX = ss.x - (ss.vx / Math.hypot(ss.vx, ss.vy)) * ss.len * ss.life;
+       const tailY = ss.y - (ss.vy / Math.hypot(ss.vx, ss.vy)) * ss.len * ss.life;
+       
+       const grad = ctx.createLinearGradient(ss.x, ss.y, tailX, tailY);
+       grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+       grad.addColorStop(1, `rgba(255, 255, 255, 0)`);
+       
+       ctx.globalAlpha = 1.0;
+       ctx.strokeStyle = grad;
+       ctx.lineWidth = 1.5;
+       ctx.beginPath();
+       ctx.moveTo(ss.x, ss.y);
+       ctx.lineTo(tailX, tailY);
+       ctx.stroke();
+    }
+    
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
 
   function resize(){
     W = canvas.width = window.innerWidth;
     H = canvas.height = window.innerHeight;
+    generateCity();
+    initSky();
   }
   resize();
   window.addEventListener('resize', resize);
+
+  /* ══════ Ammo System ══════ */
+  const MAX_AMMO = 3;
+  let currentAmmo = MAX_AMMO;
+  let ammoTimer = null;
+  
+  function updateAmmoUI() {
+    const icons = document.querySelectorAll('.ammo-icon');
+    icons.forEach((icon, index) => {
+      if (index < currentAmmo) icon.classList.remove('empty');
+      else icon.classList.add('empty');
+    });
+  }
+
+  function rechargeAmmo() {
+    if (currentAmmo < MAX_AMMO) {
+      currentAmmo++;
+      updateAmmoUI();
+    }
+  }
+
+  function consumeAmmo() {
+    if (currentAmmo > 0) {
+      currentAmmo--;
+      updateAmmoUI();
+      return true;
+    }
+    return false;
+  }
 
   /* ══════ Web Audio — synthesized firework sounds ══════ */
   let audioCtx = null;
@@ -56,20 +378,25 @@
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
 
-  // Create a noise buffer (shared)
+  // Create a noise buffer (shared) — cached by quantised duration
+  const noiseBufferCache = new Map();
   function getNoiseBuffer(duration){
+    // quantise to nearest 0.1s so we get cache hits
+    const key = Math.round(duration * 10);
+    if(noiseBufferCache.has(key)) return noiseBufferCache.get(key);
     const len = audioCtx.sampleRate * duration;
     const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
     const data = buf.getChannelData(0);
     for(let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    noiseBufferCache.set(key, buf);
     return buf;
   }
 
   // Rocket launch — rising whoosh (lift charge + air rushing past the shell)
   function playLaunch(sizeKey){
     if(!audioCtx) return;
-    const vol = sizeKey === 'huge' ? 0.15 : sizeKey === 'medium' ? 0.1 : 0.06;
-    const dur = sizeKey === 'huge' ? 1.6 : sizeKey === 'medium' ? 1.3 : 1.0;
+    const vol = sizeKey === 'titan' ? 0.22 : sizeKey === 'huge' ? 0.15 : sizeKey === 'medium' ? 0.1 : 0.06;
+    const dur = sizeKey === 'titan' ? 2.0 : sizeKey === 'huge' ? 1.6 : sizeKey === 'medium' ? 1.3 : 1.0;
     const now = audioCtx.currentTime;
 
     // low thump of the lift charge igniting in the mortar tube
@@ -168,8 +495,8 @@
   function playBoom(sizeKey, depth, shape){
     if(!audioCtx) return;
     const scale = depth > 0 ? 0.4 : 1;
-    const vol = (sizeKey === 'huge' ? 0.35 : sizeKey === 'medium' ? 0.25 : sizeKey === 'small' ? 0.15 : 0.08) * scale;
-    const dur = sizeKey === 'huge' ? 0.8 : sizeKey === 'medium' ? 0.6 : 0.4;
+    const vol = (sizeKey === 'titan' ? 0.45 : sizeKey === 'huge' ? 0.35 : sizeKey === 'medium' ? 0.25 : sizeKey === 'small' ? 0.15 : 0.08) * scale;
+    const dur = sizeKey === 'titan' ? 1.2 : sizeKey === 'huge' ? 0.8 : sizeKey === 'medium' ? 0.6 : 0.4;
     const now = audioCtx.currentTime;
 
     // sharp crack transient — the initial percussive "snap" of the burst
@@ -188,7 +515,7 @@
     // low thud oscillator — the rumble
     const osc = audioCtx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(sizeKey === 'huge' ? 55 : 78, now);
+    osc.frequency.setValueAtTime(sizeKey === 'titan' ? 40 : sizeKey === 'huge' ? 55 : 78, now);
     osc.frequency.exponentialRampToValueAtTime(18, now + dur);
 
     const oscGain = audioCtx.createGain();
@@ -329,35 +656,77 @@
     tiny:   { outline: 50,  fill: 80,  scale: 2.8,  particleR: 1.2, life: 50,  rocketR: 2 },
     small:  { outline: 90,  fill: 160, scale: 4.5,  particleR: 1.6, life: 65,  rocketR: 2.5 },
     medium: { outline: 150, fill: 320, scale: 7,    particleR: 2.0, life: 85,  rocketR: 3 },
-    huge:   { outline: 240, fill: 620, scale: 10.5, particleR: 2.4, life: 105, rocketR: 3.6 }
+    huge:   { outline: 240, fill: 620, scale: 10.5, particleR: 2.4, life: 105, rocketR: 3.6 },
+    titan:  { outline: 380, fill: 1200, scale: 16.5, particleR: 2.8, life: 140, rocketR: 4.5 }
   };
 
   const rockets = [];
   const fireworks = [];
   const pendingSpreads = []; // queued secondary booms
   const looseSparks = [];    // free-flying sparks from explosions
+  const MAX_LOOSE_SPARKS = 600;
   const flashes = [];        // brief bright pop of light at the moment of each burst
+
+  /* ── Pre-rendered glow sprite ──
+     Drawing with ctx.shadowBlur is extremely expensive — it triggers a full
+     gaussian blur per draw call.  Instead we pre-render a soft radial-gradient
+     circle onto a small offscreen canvas and stamp it with drawImage + tinting
+     via globalCompositeOperation.  This is orders of magnitude cheaper. */
+  const GLOW_SIZE = 64; // half-size of the glow sprite in px
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = glowCanvas.height = GLOW_SIZE * 2;
+  const glowCtx = glowCanvas.getContext('2d');
+  const gg = glowCtx.createRadialGradient(GLOW_SIZE, GLOW_SIZE, 0, GLOW_SIZE, GLOW_SIZE, GLOW_SIZE);
+  gg.addColorStop(0, 'rgba(255,255,255,1)');
+  gg.addColorStop(0.3, 'rgba(255,255,255,0.45)');
+  gg.addColorStop(0.7, 'rgba(255,255,255,0.08)');
+  gg.addColorStop(1, 'rgba(255,255,255,0)');
+  glowCtx.fillStyle = gg;
+  glowCtx.fillRect(0, 0, GLOW_SIZE * 2, GLOW_SIZE * 2);
+
+  /* Draw a soft glow at (x, y) with colour tinting, without shadowBlur.
+     `radius` controls how large the glow appears on screen. */
+  function drawGlow(x, y, radius, color, alpha){
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = 'lighter';
+    // tint the white glow sprite by drawing a coloured rect under it
+    const s = radius * 2;
+    ctx.drawImage(glowCanvas, x - radius, y - radius, s, s);
+    // overlay the colour
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha * 0.45;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /* Swap-and-pop: O(1) removal from an unordered array */
+  function swapRemove(arr, i){
+    arr[i] = arr[arr.length - 1];
+    arr.pop();
+  }
 
   /* ── Drifting night clouds, lit from below by nearby bursts ── */
   const clouds = [];
   function makeCloud(){
-    const w = 160 + Math.random() * 260;
-    const h = 45 + Math.random() * 55;
-    const puffCount = 5 + Math.floor(Math.random() * 4);
+    const w = 180 + Math.random() * 300;
+    const h = 50 + Math.random() * 60;
+    const puffCount = 6 + Math.floor(Math.random() * 6);
     const puffs = [];
     for(let i=0;i<puffCount;i++){
       puffs.push({
         dx: (Math.random()-0.5) * w,
         dy: (Math.random()-0.5) * h * 0.5,
-        r: h * 0.35 + Math.random() * h * 0.35
+        r: h * 0.4 + Math.random() * h * 0.4
       });
     }
     return {
       x: Math.random() * (W + 400) - 200,
       y: H * 0.05 + Math.random() * H * 0.32,
       w, h, puffs,
-      speed: 0.04 + Math.random() * 0.1,
-      baseAlpha: 0.05 + Math.random() * 0.07
+      speed: 0.02 + Math.random() * 0.05,
+      baseAlpha: 0.08 + Math.random() * 0.08
     };
   }
   function initClouds(){
@@ -366,45 +735,107 @@
     for(let i=0;i<count;i++) clouds.push(makeCloud());
   }
 
+  /* ── Airplanes ── */
+  const planes = [];
+  function spawnPlane() {
+     const y = 30 + Math.random() * (H * 0.4); // upper sky
+     const dir = Math.random() > 0.5 ? 1 : -1;
+     const x = dir === 1 ? -50 : W + 50;
+     const vx = dir * (0.6 + Math.random() * 0.8);
+     const vy = (Math.random() - 0.5) * 0.4; // slight climb or descent
+     planes.push({ x, y, vx, vy, dir, frame: 0 });
+  }
+
+  /* Compute dynamic lighting on a specific point in the sky */
   function cloudLighting(cx, cy){
-    // how much nearby burst light should illuminate a point in the sky,
-    // plus which color family lit it most (nearest brightest source wins)
-    let light = 0, nearestFamily = null, nearestScore = -1;
+    let light = 0;
+    let r = 0, g = 0, b = 0, totalWeight = 0;
+    let sumX = 0, sumY = 0;
+    
+    // Add light from active firework particles
     for(const fw of fireworks){
       const dx = fw.cx - cx, dy = fw.cy - cy;
       const distSq = dx*dx + dy*dy + 1;
-      const contribution = Math.min(0.5, 5500 / distSq);
-      light += contribution;
-      if(contribution > nearestScore){ nearestScore = contribution; nearestFamily = fw.family; }
+      const contribution = Math.min(0.8, 15000 / distSq); 
+      if(contribution > 0.01) {
+         light += contribution;
+         let cR = 255, cG = 220, cB = 180;
+         if(fw.family === 'red') { cR = 255; cG = 100; cB = 120; }
+         else if(fw.family === 'blue') { cR = 120; cG = 180; cB = 255; }
+         else if(fw.family === 'green') { cR = 120; cG = 255; cB = 140; }
+         
+         r += cR * contribution;
+         g += cG * contribution;
+         b += cB * contribution;
+         sumX += fw.cx * contribution;
+         sumY += fw.cy * contribution;
+         totalWeight += contribution;
+      }
     }
-    return { light: Math.min(0.85, light), family: nearestFamily };
+
+    // Add bright pops from initial bursts
+    for(const fl of flashes){
+      const dx = fl.x - cx, dy = fl.y - cy;
+      const distSq = dx*dx + dy*dy + 1;
+      const contribution = Math.min(1.0, 40000 / distSq) * fl.life;
+      if(contribution > 0.01) {
+         light += contribution;
+         r += 255 * contribution; g += 240 * contribution; b += 210 * contribution;
+         sumX += fl.x * contribution;
+         sumY += fl.y * contribution;
+         totalWeight += contribution;
+      }
+    }
+
+    let lx, ly;
+    if (totalWeight > 0) {
+       r /= totalWeight; g /= totalWeight; b /= totalWeight;
+       lx = sumX / totalWeight;
+       ly = sumY / totalWeight;
+    } else {
+       r = 210; g = 215; b = 225; // default moonlit cloud tint
+       lx = cx; ly = cy + 500;    // default light from below
+    }
+    return { light: Math.min(0.95, light), r, g, b, lx, ly };
   }
 
   function drawClouds(){
     ctx.globalCompositeOperation = 'source-over';
+    
     for(const c of clouds){
       c.x += c.speed;
       if(c.x - c.w > W + 100){ c.x = -c.w - 100; }
-      const { light, family } = cloudLighting(c.x, c.y);
-      const alpha = Math.min(0.6, c.baseAlpha + light);
-      let tint = '210,215,225';
-      if(light > 0.03){
-        if(family === 'red') tint = '255,170,160';
-        else if(family === 'blue') tint = '160,215,255';
-        else if(family === 'green') tint = '175,255,190';
-        else tint = '255,235,210';
-      }
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = `rgb(${tint})`;
-      ctx.shadowBlur = light > 0.05 ? 26 : 0;
-      ctx.shadowColor = `rgb(${tint})`;
+      
+      const { light, r, g, b, lx, ly } = cloudLighting(c.x, c.y + c.h * 0.5);
+      
+      const litAlpha = Math.min(0.85, c.baseAlpha + light * 0.85);
+      const topAlpha = c.baseAlpha * 0.4;
+
+      // Calculate directional vector towards the light source
+      let dx = lx - c.x;
+      let dy = ly - (c.y + c.h * 0.5);
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      
+      // Scale gradient vector to cloud dimensions
+      dx = (dx / dist) * c.w * 0.5;
+      dy = (dy / dist) * c.h * 1.2;
+
+      // Gradient applies across the cloud, facing the light source
+      const grad = ctx.createLinearGradient(c.x - dx, c.y - dy, c.x + dx, c.y + dy);
+      grad.addColorStop(0, `rgba(160, 170, 190, ${topAlpha})`);
+      grad.addColorStop(1, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${litAlpha})`);
+      
+      ctx.fillStyle = grad;
+      
+      // Draw all puffs as a single path so their opacities don't multiply on overlap
+      ctx.beginPath();
       for(const p of c.puffs){
-        ctx.beginPath();
-        ctx.ellipse(c.x + p.dx, c.y + p.dy, p.r * 1.4, p.r, 0, 0, Math.PI*2);
-        ctx.fill();
+        // moveTo prevents connecting lines between ellipses
+        ctx.moveTo(c.x + p.dx + p.r * 1.6, c.y + p.dy);
+        ctx.ellipse(c.x + p.dx, c.y + p.dy, p.r * 1.6, p.r, 0, 0, Math.PI*2);
       }
+      ctx.fill();
     }
-    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
   }
 
@@ -413,15 +844,16 @@
 
   function spawnRocket(tx, ty){
     const roll = Math.random();
-    const sizeKey = roll < 0.4 ? 'small' : (roll < 0.75 ? 'medium' : 'huge');
+    // 15% small, 15% medium, 60% huge, 10% titan
+    const sizeKey = roll < 0.15 ? 'small' : (roll < 0.30 ? 'medium' : (roll < 0.90 ? 'huge' : 'titan'));
     const cfg = sizes[sizeKey];
-    const startX = tx + (Math.random()*60 - 30);
-    const startY = H + 10;
+    const startX = W * 0.5 + (Math.random() * 40 - 20); // Spawns from the center box
+    const startY = H - 60; // Top of the firework box
     const family = pickFamily();
 
     if(Math.random() < 0.35){
-      const wDur = sizeKey === 'huge' ? 1.6 : sizeKey === 'medium' ? 1.3 : 1.0;
-      playWhistle(wDur, sizeKey === 'huge' ? 0.12 : sizeKey === 'medium' ? 0.09 : 0.06);
+      const wDur = sizeKey === 'titan' ? 2.0 : sizeKey === 'huge' ? 1.6 : sizeKey === 'medium' ? 1.3 : 1.0;
+      playWhistle(wDur, sizeKey === 'titan' ? 0.16 : sizeKey === 'huge' ? 0.12 : sizeKey === 'medium' ? 0.09 : 0.06);
     } else {
       playLaunch(sizeKey);
     }
@@ -585,8 +1017,9 @@
     // bright pop of light at the instant of the burst
     flashes.push({ x, y, r: cfg.scale * 15, life: 1 });
 
-    // burst sparks that fly outward on explosion
-    const sparkCount = 40 + Math.floor(Math.random() * 80);
+    // burst sparks that fly outward on explosion (capped for performance)
+    const sparkBudget = MAX_LOOSE_SPARKS - looseSparks.length;
+    const sparkCount = Math.min(sparkBudget, 30 + Math.floor(Math.random() * 50));
     for(let i = 0; i < sparkCount; i++){
       const angle = Math.random() * Math.PI * 2;
       const speed = 2 + Math.random() * 6;
@@ -647,26 +1080,69 @@
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.fillRect(0,0,W,H);
 
+    drawSky();
     drawClouds();
+    drawCity();
+
+    // planes
+    ctx.globalCompositeOperation = 'source-over';
+    if(Math.random() < 0.0015 && planes.length < 3){
+      spawnPlane();
+    }
+    for(let i = planes.length - 1; i >= 0; i--){
+      const pl = planes[i];
+      pl.x += pl.vx;
+      pl.y += pl.vy;
+      pl.frame++;
+
+      const isBlinking = (pl.frame % 60) < 10;
+      
+      ctx.save();
+      ctx.translate(pl.x, pl.y);
+      if (pl.dir === -1) ctx.scale(-1, 1);
+      
+      // Pitch the nose up or down based on climb/descent
+      ctx.rotate(Math.atan2(pl.vy, Math.abs(pl.vx)));
+      
+      // Plane silhouette (Side profile)
+      ctx.fillStyle = '#080a0f';
+      ctx.beginPath();
+      // Fuselage
+      ctx.ellipse(0, 0, 12, 2.5, 0, 0, Math.PI*2);
+      // Tail fin
+      ctx.moveTo(-8, 0); ctx.lineTo(-12, -7); ctx.lineTo(-14, -7); ctx.lineTo(-12, 0);
+      // Wing (facing us, angled slightly down)
+      ctx.moveTo(1, 1); ctx.lineTo(-5, 7); ctx.lineTo(-9, 7); ctx.lineTo(-3, 1);
+      ctx.fill();
+      
+      // Wing light (Facing us)
+      // Right wing is green (visible if flying right), Left wing is red (visible if flying left)
+      ctx.fillStyle = pl.dir === 1 ? '#00ff00' : '#ff0000';
+      ctx.beginPath(); ctx.arc(-7, 7, 1, 0, Math.PI*2); ctx.fill();
+
+      // Tail strobe (White)
+      if(isBlinking){
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(-13, -7, 1.5, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+
+      if(pl.x < -100 || pl.x > W + 100){
+        swapRemove(planes, i);
+      }
+    }
 
     // switch to additive blending for every bright pyrotechnic element below —
     // overlapping light adds up instead of just overwriting, which is what
     // makes a real firework burst look genuinely brilliant
     ctx.globalCompositeOperation = 'lighter';
 
-    // bright pop of light at the instant each shell bursts
+    // bright pop of light at the instant each shell bursts — use glow sprite
     for(let i = flashes.length - 1; i >= 0; i--){
       const fl = flashes[i];
       fl.life -= 0.08;
-      if(fl.life <= 0){ flashes.splice(i, 1); continue; }
-      const grad = ctx.createRadialGradient(fl.x, fl.y, 0, fl.x, fl.y, fl.r);
-      grad.addColorStop(0, `rgba(255,255,255,${fl.life * 0.85})`);
-      grad.addColorStop(0.4, `rgba(255,238,200,${fl.life * 0.4})`);
-      grad.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(fl.x, fl.y, fl.r, 0, Math.PI*2);
-      ctx.fill();
+      if(fl.life <= 0){ swapRemove(flashes, i); continue; }
+      drawGlow(fl.x, fl.y, fl.r, '#fffaee', fl.life * 0.85);
     }
 
     // process pending spreads
@@ -675,11 +1151,12 @@
       if(pendingSpreads[s].timer <= 0){
         const sp = pendingSpreads[s];
         boom(sp.x, sp.y, sp.cfg, sp.family, sp.depth, sp.shape);
-        pendingSpreads.splice(s, 1);
+        swapRemove(pendingSpreads, s);
       }
     }
 
-    // draw loose sparks
+    // draw loose sparks — no shadowBlur, use glow sprite for the brightest ones
+    ctx.globalCompositeOperation = 'lighter';
     for(let si = looseSparks.length - 1; si >= 0; si--){
       const sp = looseSparks[si];
       sp.x += sp.vx;
@@ -687,17 +1164,22 @@
       sp.vy += 0.06;       // gravity
       sp.vx *= 0.99;       // drag
       sp.life -= sp.decay;
-      if(sp.life <= 0){ looseSparks.splice(si, 1); continue; }
-      ctx.globalAlpha = Math.min(1, sp.life);
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = sp.color;
+      if(sp.life <= 0){ swapRemove(looseSparks, si); continue; }
+      const a = Math.min(1, sp.life);
+      const rad = sp.r * sp.life;
+      // small glow halo via sprite (cheap, no shadowBlur)
+      if(rad > 0.6){
+        ctx.globalAlpha = a * 0.5;
+        const gs = rad * 6;
+        ctx.drawImage(glowCanvas, sp.x - gs * 0.5, sp.y - gs * 0.5, gs, gs);
+      }
+      ctx.globalAlpha = a;
       ctx.fillStyle = sp.color;
       ctx.beginPath();
-      ctx.arc(sp.x, sp.y, sp.r * sp.life, 0, Math.PI*2);
+      ctx.arc(sp.x, sp.y, rad, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
 
     // rockets ascending
     for(let r = rockets.length - 1; r >= 0; r--){
@@ -757,52 +1239,41 @@
           color: rk.color
         });
       }
-      // update & draw sparks
+      // update & draw sparks — no shadowBlur
       for(let si = rk.sparks.length - 1; si >= 0; si--){
         const sp = rk.sparks[si];
         sp.x += sp.vx; sp.y += sp.vy;
         sp.vy += 0.05; // gravity
         sp.life -= 0.05;
-        if(sp.life <= 0){ rk.sparks.splice(si, 1); continue; }
+        if(sp.life <= 0){ swapRemove(rk.sparks, si); continue; }
         ctx.globalAlpha = sp.life * 0.7;
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = sp.color;
         ctx.fillStyle = sp.color;
         ctx.beginPath();
         ctx.arc(sp.x, sp.y, 1.2, 0, Math.PI*2);
         ctx.fill();
       }
-      ctx.shadowBlur = 0;
 
       rk.trail.push({x: rk.x, y: rk.y, life: 1});
       if(rk.trail.length > 30) rk.trail.shift();
 
+      // rocket trail — no shadowBlur, use glow sprite
+      ctx.fillStyle = rk.color;
       for(const tp of rk.trail){
         tp.life -= 0.04;
         if(tp.life <= 0) continue;
         ctx.globalAlpha = Math.max(0, tp.life);
-        ctx.shadowBlur = 24;
-        ctx.shadowColor = rk.color;
-        ctx.fillStyle = rk.color;
         ctx.beginPath();
         ctx.arc(tp.x, tp.y, rk.cfg.rocketR * 0.7, 0, Math.PI*2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
 
-      // neon head glow — double pass for intense bloom
-      ctx.shadowBlur = 44;
-      ctx.shadowColor = glowColor(rk.family);
-      ctx.fillStyle = rk.color;
-      ctx.beginPath();
-      ctx.arc(rk.x, rk.y, rk.cfg.rocketR * 1.3, 0, Math.PI*2);
-      ctx.fill();
-      ctx.shadowBlur = 18;
+      // neon head glow via sprite instead of shadowBlur
+      drawGlow(rk.x, rk.y, rk.cfg.rocketR * 8, glowColor(rk.family), 0.7);
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
       ctx.arc(rk.x, rk.y, rk.cfg.rocketR, 0, Math.PI*2);
       ctx.fill();
-      ctx.shadowBlur = 0;
 
       if(t >= 1){
         boom(rk.tx, rk.ty, rk.cfg, rk.family, 0);
@@ -818,20 +1289,21 @@
       if(fw.mode === 'physics'){
         const emberColor = '#4a2408';
         let aliveCount = 0;
+        // collect crossette children to add after the loop (avoids mutating during iteration)
+        const crossetteChildren = [];
         for(let pi = fw.particles.length - 1; pi >= 0; pi--){
           const p = fw.particles[pi];
 
-          // fading trail (chrysanthemum / willow / palm leave glowing tails)
+          // fading trail (chrysanthemum / willow / palm leave glowing tails) — no shadowBlur
           if(p.trail){
             p.trail.push({x: p.x, y: p.y, life: 1});
             if(p.trail.length > p.trailLen) p.trail.shift();
-            for(const tp of p.trail){
+            ctx.fillStyle = p.color;
+            for(let ti = p.trail.length - 1; ti >= 0; ti--){
+              const tp = p.trail[ti];
               tp.life -= 0.09;
               if(tp.life <= 0) continue;
               ctx.globalAlpha = tp.life * p.life * 0.55;
-              ctx.shadowBlur = 10;
-              ctx.shadowColor = p.color;
-              ctx.fillStyle = p.color;
               ctx.beginPath();
               ctx.arc(tp.x, tp.y, p.r * 0.55, 0, Math.PI*2);
               ctx.fill();
@@ -846,31 +1318,30 @@
           p.y += p.vy;
           p.life -= p.decay;
 
-          if(p.life <= 0){ fw.particles.splice(pi, 1); continue; }
+          if(p.life <= 0){ swapRemove(fw.particles, pi); continue; }
           aliveCount++;
 
           // stars dim toward a burnt ember color right before they extinguish
           const burning = p.life < 0.22;
           const drawColor = burning ? emberColor : p.color;
+          const lifeAlpha = Math.min(1, p.life);
 
-          ctx.globalAlpha = Math.min(1, p.life) * 0.7;
-          ctx.shadowBlur = burning ? 10 : 28;
-          ctx.shadowColor = burning ? '#ff5500' : drawColor;
+          // glow halo via sprite (replaces shadowBlur)
+          if(!burning){
+            drawGlow(p.x, p.y, p.r * 5, drawColor, lifeAlpha * 0.4);
+          }
+
+          // main particle dot
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = lifeAlpha;
           ctx.fillStyle = drawColor;
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.r * (burning ? 0.9 : 1.3), 0, Math.PI*2);
           ctx.fill();
 
-          ctx.globalAlpha = Math.min(1, p.life);
-          ctx.shadowBlur = burning ? 4 : 16;
-          ctx.fillStyle = drawColor;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-          ctx.fill();
-
+          // white-hot center (skip for burning embers)
           if(!burning){
             ctx.globalAlpha = p.life * 0.45;
-            ctx.shadowBlur = 0;
             ctx.fillStyle = '#ffffff';
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.r * 0.4, 0, Math.PI*2);
@@ -878,8 +1349,8 @@
           }
           ctx.globalAlpha = 1;
 
-          // occasional shed glitter
-          if(!burning && Math.random() < 0.02){
+          // occasional shed glitter (capped)
+          if(!burning && Math.random() < 0.02 && looseSparks.length < MAX_LOOSE_SPARKS){
             looseSparks.push({
               x: p.x, y: p.y,
               vx: (Math.random()-0.5)*1.5, vy: 0.4 + Math.random()*1.5,
@@ -895,7 +1366,7 @@
             for(let m=0;m<miniCount;m++){
               const angle = Math.random() * Math.PI * 2;
               const speed = 1.5 + Math.random()*3;
-              fw.particles.push({
+              crossetteChildren.push({
                 x: p.x, y: p.y,
                 vx: Math.cos(angle)*speed + p.vx*0.25,
                 vy: Math.sin(angle)*speed + p.vy*0.25,
@@ -909,10 +1380,14 @@
             if(!fw.crackleSoundPlayed){ fw.crackleSoundPlayed = true; playCrackle(0.22, 6); }
           }
         }
-        ctx.shadowBlur = 0;
+        // add crossette children after iteration is done
+        for(const child of crossetteChildren) fw.particles.push(child);
 
         if(!fw.hasSpread && fw.frame > 42) trySpread(fw);
-        if(aliveCount === 0){ fireworks.splice(f, 1); }
+        if(aliveCount === 0){ 
+          if(fw.depth === 0) rechargeAmmo();
+          swapRemove(fireworks, f); 
+        }
         continue;
       }
 
@@ -925,15 +1400,15 @@
           const ease = 1 - Math.pow(1-progress, 3);
           const curX = p.x + (p.tx - p.x) * ease;
           const curY = p.y + (p.ty - p.y) * ease;
-          // outer neon glow
-          ctx.shadowBlur = 30;
-          ctx.shadowColor = p.color;
+          // outer neon glow via sprite
+          drawGlow(curX, curY, p.r * 5, p.color, 0.6);
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = 1;
           ctx.fillStyle = p.color;
           ctx.beginPath();
           ctx.arc(curX, curY, p.r * 1.2, 0, Math.PI*2);
           ctx.fill();
           // bright core
-          ctx.shadowBlur = 10;
           ctx.fillStyle = '#ffffff';
           ctx.globalAlpha = 0.55;
           ctx.beginPath();
@@ -941,7 +1416,6 @@
           ctx.fill();
           ctx.globalAlpha = 1;
         }
-        ctx.shadowBlur = 0;
         if(allSettled && fw.frame > 80){
           fw.phase = 'hold';
           fw.frame = 0;
@@ -950,33 +1424,25 @@
         const glow = glowColor(fw.family);
         for(const p of fw.particles){
           const tw = 0.65 + 0.35*Math.sin((fw.frame*0.15) + p.tx);
-          // wide soft neon bloom
-          ctx.globalAlpha = tw * 0.65;
-          ctx.shadowBlur = 48;
-          ctx.shadowColor = glow;
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(p.tx, p.ty, p.r * 2, 0, Math.PI*2);
-          ctx.fill();
+          // wide soft neon bloom via sprite
+          drawGlow(p.tx, p.ty, p.r * 7, glow, tw * 0.5);
           // bright core particle
+          ctx.globalCompositeOperation = 'lighter';
           ctx.globalAlpha = tw;
-          ctx.shadowBlur = 20;
-          ctx.shadowColor = p.color;
           ctx.fillStyle = p.color;
           ctx.beginPath();
           ctx.arc(p.tx, p.ty, p.r, 0, Math.PI*2);
           ctx.fill();
           // white-hot center
           ctx.globalAlpha = tw * 0.5;
-          ctx.shadowBlur = 0;
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
           ctx.arc(p.tx, p.ty, p.r * 0.4, 0, Math.PI*2);
           ctx.fill();
           ctx.globalAlpha = 1;
 
-          // shed glitter sparks from heart particles
-          if(Math.random() < 0.03){
+          // shed glitter sparks from heart particles (capped)
+          if(Math.random() < 0.03 && looseSparks.length < MAX_LOOSE_SPARKS){
             looseSparks.push({
               x: p.tx, y: p.ty,
               vx: (Math.random()-0.5)*2,
@@ -988,7 +1454,6 @@
             });
           }
         }
-        ctx.shadowBlur = 0;
         if(fw.frame > fw.life){
           fw.phase = 'fade';
           fw.frame = 0;
@@ -999,25 +1464,19 @@
         const alpha = Math.max(0, 1 - fw.frame/40);
         const glow = glowColor(fw.family);
         for(const p of fw.particles){
-          ctx.globalAlpha = alpha * 0.55;
-          ctx.shadowBlur = 36;
-          ctx.shadowColor = glow;
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(p.tx, p.ty, p.r * 1.8, 0, Math.PI*2);
-          ctx.fill();
+          // glow halo via sprite
+          drawGlow(p.tx, p.ty, p.r * 5, glow, alpha * 0.45);
+          ctx.globalCompositeOperation = 'lighter';
           ctx.globalAlpha = alpha;
-          ctx.shadowBlur = 14;
-          ctx.shadowColor = p.color;
           ctx.fillStyle = p.color;
           ctx.beginPath();
           ctx.arc(p.tx, p.ty, p.r, 0, Math.PI*2);
           ctx.fill();
           ctx.globalAlpha = 1;
         }
-        ctx.shadowBlur = 0;
         if(fw.frame > 45){
-          fireworks.splice(f, 1);
+          if(fw.depth === 0) rechargeAmmo();
+          swapRemove(fireworks, f);
         }
       }
     }
@@ -1026,10 +1485,12 @@
   }
 
   canvas.addEventListener('click', (e) => {
-    initAudio();
-    spawnRocket(e.clientX, e.clientY);
-    const hint = document.getElementById('hint');
-    if(hint){ hint.style.opacity = '0'; }
+    if(consumeAmmo()){
+      initAudio();
+      spawnRocket(e.clientX, e.clientY);
+      const hint = document.getElementById('hint');
+      if(hint){ hint.style.opacity = '0'; }
+    }
   });
 
   requestAnimationFrame(step);
